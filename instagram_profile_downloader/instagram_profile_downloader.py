@@ -100,6 +100,24 @@ def main(profile_name, media_root, no_highlights, no_posts, user, password):
         diagnose=True,
     )
 
+    # Ensure the directories exist
+    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(media_dir, exist_ok=True)
+
+    log_filename = os.path.join(log_dir, generate_log_filename(profile_name))
+
+    logger.add(
+        log_filename,
+        rotation="50 MB",
+        retention="10 days",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+        level="INFO",
+        compression="zip",
+        serialize=False,
+        backtrace=True,
+        diagnose=True,
+    )
+
     # Create an instance of Instaloader
     L = instaloader.Instaloader()
 
