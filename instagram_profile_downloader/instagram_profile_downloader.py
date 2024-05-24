@@ -87,6 +87,7 @@ def main(profile_name, media_root, no_highlights, no_posts, user, password):
             f"[green]Profile name set to:[/green] [bold]{profile_name}[/bold]"
         )
 
+    media_root = media_root or config.get("download_directory")
     if not media_root:
         media_root = select_input_directory()
 
