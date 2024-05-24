@@ -8,7 +8,6 @@ deprecated/
 media/*
 .env
 instagram_profile_downloader.spec
-instagram_profile_downloader
 __pycache__
 *.pyc
 *.pyo
