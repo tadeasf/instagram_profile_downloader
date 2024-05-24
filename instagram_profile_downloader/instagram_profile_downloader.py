@@ -113,52 +113,57 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
     L = instaloader.Instaloader()
     L.login(user, password)
 
-    async def download_media(url, output_dir, session: ClientSession):
-        try:
-            # Ensure the output directory exists
-            os.makedirs(output_dir, exist_ok=True)
+    async def download_media(
+        url, output_dir, session: ClientSession, semaphore: asyncio.Semaphore
+    ):
+        async with semaphore:
+            try:
+                # Ensure the output directory exists
+                os.makedirs(output_dir, exist_ok=True)
 
-            # Extract filename from URL
-            filename = os.path.join(output_dir, url.split("?")[0].split("/")[-1])
-            short_filename = os.path.basename(filename)  # Get only the filename
+                # Extract filename from URL
+                filename = os.path.join(output_dir, url.split("?")[0].split("/")[-1])
+                short_filename = os.path.basename(filename)  # Get only the filename
 
-            # Download the media
-            async with session.get(url) as response:
-                if response.status == 200:
-                    with open(filename, "wb") as f:
-                        async for chunk in response.content.iter_chunked(1024):
-                            f.write(chunk)
-                    logger.info(f"Downloaded {url} to {filename}")
+                # Download the media
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        with open(filename, "wb") as f:
+                            async for chunk in response.content.iter_chunked(1024):
+                                f.write(chunk)
+                        logger.info(f"Downloaded {url} to {filename}")
 
-                    file_size = os.path.getsize(filename)
-                    formatted_size = format_size(file_size)
+                        file_size = os.path.getsize(filename)
+                        formatted_size = format_size(file_size)
 
-                    if filename.lower().endswith((".png", ".jpg", ".jpeg")):
-                        with Image.open(filename) as img:
-                            width, height = img.size
-                        console.print(
-                            f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta]({width}x{height}px, {formatted_size})[/magenta]"
-                        )
-                    elif filename.lower().endswith((".mp4", ".avi", ".mov")):
-                        cap = cv2.VideoCapture(filename)
-                        fps = cap.get(cv2.CAP_PROP_FPS)
-                        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                        duration = total_frames / fps
-                        console.print(
-                            f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta](FPS: {fps:.2f}, Duration: {duration:.2f}s, {formatted_size})[/magenta]"
-                        )
+                        if filename.lower().endswith((".png", ".jpg", ".jpeg")):
+                            with Image.open(filename) as img:
+                                width, height = img.size
+                            console.print(
+                                f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta]({width}x{height}px, {formatted_size})[/magenta]"
+                            )
+                        elif filename.lower().endswith((".mp4", ".avi", ".mov")):
+                            cap = cv2.VideoCapture(filename)
+                            fps = cap.get(cv2.CAP_PROP_FPS)
+                            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                            duration = total_frames / fps
+                            console.print(
+                                f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta](FPS: {fps:.2f}, Duration: {duration:.2f}s, {formatted_size})[/magenta]"
+                            )
+                        else:
+                            console.print(
+                                f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta]({formatted_size})[/magenta]"
+                            )
                     else:
-                        console.print(
-                            f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta]({formatted_size})[/magenta]"
+                        logger.error(
+                            f"Failed to download {url}: HTTP {response.status}"
                         )
-                else:
-                    logger.error(f"Failed to download {url}: HTTP {response.status}")
-                    console.print(
-                        f"[red]Failed to download {url}: HTTP {response.status}[/red]"
-                    )
-        except Exception as e:
-            logger.error(f"Failed to download {url}: {e}")
-            console.print(f"[red]Failed to download {url}: {e}[/red]")
+                        console.print(
+                            f"[red]Failed to download {url}: HTTP {response.status}[/red]"
+                        )
+            except Exception as e:
+                logger.error(f"Failed to download {url}: {e}")
+                console.print(f"[red]Failed to download {url}: {e}[/red]")
 
     async def get_profile_media(profile_name, progress):
         try:
@@ -218,6 +223,7 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
             console.print(f"[blue]Total highlights: {total_highlights}[/blue]")
 
             async with ClientSession() as session:
+                semaphore = asyncio.Semaphore(4)  # Limiting to 4 concurrent downloads
                 tasks = []
                 if not no_posts:
                     post_task = progress.add_task(
@@ -229,12 +235,16 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
                             if post.typename == "GraphImage":
                                 logger.info(f"Downloading image: {post.url}")
                                 tasks.append(
-                                    download_media(post.url, media_dir, session)
+                                    download_media(
+                                        post.url, media_dir, session, semaphore
+                                    )
                                 )
                             elif post.typename == "GraphVideo":
                                 logger.info(f"Downloading video: {post.video_url}")
                                 tasks.append(
-                                    download_media(post.video_url, media_dir, session)
+                                    download_media(
+                                        post.video_url, media_dir, session, semaphore
+                                    )
                                 )
                             elif post.typename == "GraphSidecar":
                                 for sidecar in post.get_sidecar_nodes():
@@ -247,6 +257,7 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
                                                 sidecar.video_url,
                                                 media_dir,
                                                 session,
+                                                semaphore,
                                             )
                                         )
                                     else:
@@ -258,6 +269,7 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
                                                 sidecar.display_url,
                                                 media_dir,
                                                 session,
+                                                semaphore,
                                             )
                                         )
                             # Implement rate limiting
@@ -287,7 +299,10 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
                                     )
                                     tasks.append(
                                         download_media(
-                                            item.video_url, media_dir, session
+                                            item.video_url,
+                                            media_dir,
+                                            session,
+                                            semaphore,
                                         )
                                     )
                                 else:
@@ -295,7 +310,9 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
                                         f"Downloading highlight image: {item.url}"
                                     )
                                     tasks.append(
-                                        download_media(item.url, media_dir, session)
+                                        download_media(
+                                            item.url, media_dir, session, semaphore
+                                        )
                                     )
                                 # Implement rate limiting
                                 await asyncio.sleep(0.2)
