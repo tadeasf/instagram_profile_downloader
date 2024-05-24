@@ -156,6 +156,7 @@ def main(profile_name, media_root, no_highlights, no_posts, user, password):
 
             # Extract filename from URL
             filename = os.path.join(output_dir, url.split("?")[0].split("/")[-1])
+            short_filename = os.path.basename(filename)  # Get only the filename
 
             # Download the media
             response = requests.get(url, stream=True)
@@ -172,7 +173,7 @@ def main(profile_name, media_root, no_highlights, no_posts, user, password):
                     with Image.open(filename) as img:
                         width, height = img.size
                     console.print(
-                        f"[cyan bold]Image downloaded:[/cyan bold] {filename} [magenta]({width}x{height}px, {formatted_size})[/magenta]"
+                        f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta]({width}x{height}px, {formatted_size})[/magenta]"
                     )
                 elif filename.lower().endswith((".mp4", ".avi", ".mov")):
                     cap = cv2.VideoCapture(filename)
@@ -180,11 +181,11 @@ def main(profile_name, media_root, no_highlights, no_posts, user, password):
                     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                     duration = total_frames / fps
                     console.print(
-                        f"[cyan bold]Video downloaded:[/cyan bold] {filename} [magenta](FPS: {fps:.2f}, Duration: {duration:.2f}s, {formatted_size})[/magenta]"
+                        f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta](FPS: {fps:.2f}, Duration: {duration:.2f}s, {formatted_size})[/magenta]"
                     )
                 else:
                     console.print(
-                        f"[cyan bold]Downloaded:[/cyan bold] {filename} [magenta]({formatted_size})[/magenta]"
+                        f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta]({formatted_size})[/magenta]"
                     )
             else:
                 logger.error(f"Failed to download {url}: HTTP {response.status_code}")
