@@ -69,20 +69,25 @@ def cli_select_input_directory():
 
 
 @click.command()
-@click.argument("profile_name", required=False)
+@click.argument("profile_names", required=False)
 @click.option("--media-root", required=False, help="Base directory for media output.")
 @click.option("--no-highlights", is_flag=True, help="Do not download highlights.")
 @click.option("--no-posts", is_flag=True, help="Do not download posts.")
 @click.option("--user", required=False, help="Instagram username.")
 @click.option("--password", required=False, help="Instagram password.")
-def main(profile_name, media_root, no_highlights, no_posts, user, password):
+def main(profile_names, media_root, no_highlights, no_posts, user, password):
     config = load_config()
 
-    if not profile_name:
+    if not profile_names:
         console.print(
-            "[bold magenta]Please enter the Instagram profile name[/bold magenta]"
+            "[bold magenta]Please enter the Instagram profile names separated by commas[/bold magenta]"
         )
-        profile_name = click.prompt("", type=str)
+        profile_names = click.prompt("", type=str)
+
+    profile_names = [name.strip() for name in profile_names.split(",")]
+
+    # instead of this: console.print(f"[green]Profile names set to:[/green] [bold]{profile_names}[/bold]") i would like to get multiple lines of console output -> one line per profile name
+    for profile_name in profile_names:
         console.print(
             f"[green]Profile name set to:[/green] [bold]{profile_name}[/bold]"
         )
@@ -91,64 +96,22 @@ def main(profile_name, media_root, no_highlights, no_posts, user, password):
     if not media_root:
         media_root = select_input_directory()
 
-    # Define directories based on the profile name
-    base_dir = os.path.join(media_root, f"{profile_name}_media")
-    log_dir = os.path.join(base_dir, "logs")
-    media_dir = base_dir
+    # Check if credentials are provided in the config file
+    user = user or config.get("username")
+    password = password or config.get("password")
 
-    # Ensure the directories exist
-    os.makedirs(log_dir, exist_ok=True)
-    os.makedirs(media_dir, exist_ok=True)
-
-    log_filename = os.path.join(log_dir, generate_log_filename(profile_name))
-
-    logger.add(
-        log_filename,
-        rotation="50 MB",
-        retention="10 days",
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-        level="INFO",
-        compression="zip",
-        serialize=False,
-        backtrace=True,
-        diagnose=True,
-    )
-
-    # Ensure the directories exist
-    os.makedirs(log_dir, exist_ok=True)
-    os.makedirs(media_dir, exist_ok=True)
-
-    log_filename = os.path.join(log_dir, generate_log_filename(profile_name))
-
-    logger.add(
-        log_filename,
-        rotation="50 MB",
-        retention="10 days",
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-        level="INFO",
-        compression="zip",
-        serialize=False,
-        backtrace=True,
-        diagnose=True,
-    )
+    if not user or not password:
+        console.print(
+            "[bold magenta]Please enter your Instagram credentials[/bold magenta]"
+        )
+        console.print("[bold cyan]Username:[/bold cyan]", end=" ")
+        user = click.prompt("", type=str)
+        console.print("[bold cyan]Password:[/bold cyan]", end=" ")
+        password = click.prompt("", type=str, hide_input=True)
 
     # Create an instance of Instaloader
     L = instaloader.Instaloader()
-
-    if not no_highlights:
-        # Check if credentials are provided in the config file
-        user = user or config.get("username")
-        password = password or config.get("password")
-
-        if not user or not password:
-            console.print(
-                "[bold magenta]Please enter your Instagram credentials[/bold magenta]"
-            )
-            console.print("[bold cyan]Username:[/bold cyan]", end=" ")
-            user = click.prompt("", type=str)
-            console.print("[bold cyan]Password:[/bold cyan]", end=" ")
-            password = click.prompt("", type=str, hide_input=True)
-        L.login(user, password)
+    L.login(user, password)
 
     def download_media(url, output_dir):
         try:
@@ -199,6 +162,29 @@ def main(profile_name, media_root, no_highlights, no_posts, user, password):
 
     def get_profile_media(profile_name):
         try:
+            # Define directories based on the profile name
+            base_dir = os.path.join(media_root, f"{profile_name}_media")
+            log_dir = os.path.join(base_dir, "logs")
+            media_dir = base_dir
+
+            # Ensure the directories exist
+            os.makedirs(log_dir, exist_ok=True)
+            os.makedirs(media_dir, exist_ok=True)
+
+            log_filename = os.path.join(log_dir, generate_log_filename(profile_name))
+
+            logger.add(
+                log_filename,
+                rotation="50 MB",
+                retention="10 days",
+                format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+                level="INFO",
+                compression="zip",
+                serialize=False,
+                backtrace=True,
+                diagnose=True,
+            )
+
             # Load the profile
             profile = instaloader.Profile.from_username(L.context, profile_name)
 
@@ -309,7 +295,8 @@ def main(profile_name, media_root, no_highlights, no_posts, user, password):
             logger.error(f"Error fetching profile {profile_name}: {e}")
             console.print(f"[red]Error fetching profile {profile_name}: {e}[/red]")
 
-    get_profile_media(profile_name)
+    for profile_name in profile_names:
+        get_profile_media(profile_name)
 
 
 if __name__ == "__main__":
