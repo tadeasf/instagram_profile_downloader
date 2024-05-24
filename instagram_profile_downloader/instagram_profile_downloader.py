@@ -11,6 +11,7 @@ from PIL import Image
 import cv2
 import tkinter as tk
 from tkinter import filedialog
+import yaml
 
 # Install rich traceback handler
 install()
@@ -20,6 +21,16 @@ console = Console()
 
 # Configure loguru to log to a file
 logger.remove()
+
+CONFIG_PATH = os.path.expanduser("~/.config/instagram_profile_downloader/config.yml")
+
+
+def load_config():
+    """Load the configuration file."""
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r") as file:
+            return yaml.safe_load(file)
+    return {}
 
 
 def generate_log_filename(profile_name):
@@ -65,6 +76,8 @@ def cli_select_input_directory():
 @click.option("--user", required=False, help="Instagram username.")
 @click.option("--password", required=False, help="Instagram password.")
 def main(profile_name, media_root, no_highlights, no_posts, user, password):
+    config = load_config()
+
     if not profile_name:
         console.print(
             "[bold magenta]Please enter the Instagram profile name[/bold magenta]"
@@ -122,6 +135,10 @@ def main(profile_name, media_root, no_highlights, no_posts, user, password):
     L = instaloader.Instaloader()
 
     if not no_highlights:
+        # Check if credentials are provided in the config file
+        user = user or config.get("username")
+        password = password or config.get("password")
+
         if not user or not password:
             console.print(
                 "[bold magenta]Please enter your Instagram credentials[/bold magenta]"
