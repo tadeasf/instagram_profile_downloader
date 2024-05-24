@@ -4,3 +4,5 @@ requests
 rich-click
 opencv-python
 pillow
+asyncio
+aiohttp

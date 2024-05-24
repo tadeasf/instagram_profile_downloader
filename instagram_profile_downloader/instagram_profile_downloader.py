@@ -1,6 +1,5 @@
 import os
 import time
-import requests
 import instaloader
 import rich_click as click
 from loguru import logger
@@ -12,6 +11,8 @@ import cv2
 import tkinter as tk
 from tkinter import filedialog
 import yaml
+import asyncio
+from aiohttp import ClientSession
 
 # Install rich traceback handler
 install()
@@ -86,7 +87,6 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
 
     profile_names = [name.strip() for name in profile_names.split(",")]
 
-    # instead of this: console.print(f"[green]Profile names set to:[/green] [bold]{profile_names}[/bold]") i would like to get multiple lines of console output -> one line per profile name
     for profile_name in profile_names:
         console.print(
             f"[green]Profile name set to:[/green] [bold]{profile_name}[/bold]"
@@ -113,7 +113,7 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
     L = instaloader.Instaloader()
     L.login(user, password)
 
-    def download_media(url, output_dir):
+    async def download_media(url, output_dir, session: ClientSession):
         try:
             # Ensure the output directory exists
             os.makedirs(output_dir, exist_ok=True)
@@ -123,44 +123,44 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
             short_filename = os.path.basename(filename)  # Get only the filename
 
             # Download the media
-            response = requests.get(url, stream=True)
-            if response.status_code == 200:
-                with open(filename, "wb") as f:
-                    for chunk in response.iter_content(1024):
-                        f.write(chunk)
-                logger.info(f"Downloaded {url} to {filename}")
+            async with session.get(url) as response:
+                if response.status == 200:
+                    with open(filename, "wb") as f:
+                        async for chunk in response.content.iter_chunked(1024):
+                            f.write(chunk)
+                    logger.info(f"Downloaded {url} to {filename}")
 
-                file_size = os.path.getsize(filename)
-                formatted_size = format_size(file_size)
+                    file_size = os.path.getsize(filename)
+                    formatted_size = format_size(file_size)
 
-                if filename.lower().endswith((".png", ".jpg", ".jpeg")):
-                    with Image.open(filename) as img:
-                        width, height = img.size
-                    console.print(
-                        f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta]({width}x{height}px, {formatted_size})[/magenta]"
-                    )
-                elif filename.lower().endswith((".mp4", ".avi", ".mov")):
-                    cap = cv2.VideoCapture(filename)
-                    fps = cap.get(cv2.CAP_PROP_FPS)
-                    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                    duration = total_frames / fps
-                    console.print(
-                        f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta](FPS: {fps:.2f}, Duration: {duration:.2f}s, {formatted_size})[/magenta]"
-                    )
+                    if filename.lower().endswith((".png", ".jpg", ".jpeg")):
+                        with Image.open(filename) as img:
+                            width, height = img.size
+                        console.print(
+                            f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta]({width}x{height}px, {formatted_size})[/magenta]"
+                        )
+                    elif filename.lower().endswith((".mp4", ".avi", ".mov")):
+                        cap = cv2.VideoCapture(filename)
+                        fps = cap.get(cv2.CAP_PROP_FPS)
+                        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                        duration = total_frames / fps
+                        console.print(
+                            f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta](FPS: {fps:.2f}, Duration: {duration:.2f}s, {formatted_size})[/magenta]"
+                        )
+                    else:
+                        console.print(
+                            f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta]({formatted_size})[/magenta]"
+                        )
                 else:
+                    logger.error(f"Failed to download {url}: HTTP {response.status}")
                     console.print(
-                        f"[cyan bold]Downloaded:[/cyan bold] {short_filename} [magenta]({formatted_size})[/magenta]"
+                        f"[red]Failed to download {url}: HTTP {response.status}[/red]"
                     )
-            else:
-                logger.error(f"Failed to download {url}: HTTP {response.status_code}")
-                console.print(
-                    f"[red]Failed to download {url}: HTTP {response.status_code}[/red]"
-                )
         except Exception as e:
             logger.error(f"Failed to download {url}: {e}")
             console.print(f"[red]Failed to download {url}: {e}[/red]")
 
-    def get_profile_media(profile_name):
+    async def get_profile_media(profile_name, progress):
         try:
             # Define directories based on the profile name
             base_dir = os.path.join(media_root, f"{profile_name}_media")
@@ -217,57 +217,66 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
             console.print(f"[blue]Total posts: {total_posts}[/blue]")
             console.print(f"[blue]Total highlights: {total_highlights}[/blue]")
 
-            if not no_posts:
-                # Download posts with progress bar
-                with Progress(
-                    SpinnerColumn(),
-                    BarColumn(),
-                    "[progress.percentage]{task.percentage:>3.1f}%",
-                    TextColumn("{task.description}"),
-                    console=console,
-                ) as progress:
+            async with ClientSession() as session:
+                tasks = []
+                if not no_posts:
                     post_task = progress.add_task(
-                        "Downloading posts...", total=total_posts
+                        f"Downloading posts for {profile_name}...", total=total_posts
                     )
 
                     for post in profile.get_posts():
                         try:
                             if post.typename == "GraphImage":
                                 logger.info(f"Downloading image: {post.url}")
-                                download_media(post.url, media_dir)
+                                tasks.append(
+                                    download_media(post.url, media_dir, session)
+                                )
                             elif post.typename == "GraphVideo":
                                 logger.info(f"Downloading video: {post.video_url}")
-                                download_media(post.video_url, media_dir)
+                                tasks.append(
+                                    download_media(post.video_url, media_dir, session)
+                                )
                             elif post.typename == "GraphSidecar":
                                 for sidecar in post.get_sidecar_nodes():
                                     if sidecar.is_video:
                                         logger.info(
                                             f"Downloading sidecar video: {sidecar.video_url}"
                                         )
-                                        download_media(sidecar.video_url, media_dir)
+                                        tasks.append(
+                                            download_media(
+                                                sidecar.video_url,
+                                                media_dir,
+                                                session,
+                                            )
+                                        )
                                     else:
                                         logger.info(
                                             f"Downloading sidecar image: {sidecar.display_url}"
                                         )
-                                        download_media(sidecar.display_url, media_dir)
+                                        tasks.append(
+                                            download_media(
+                                                sidecar.display_url,
+                                                media_dir,
+                                                session,
+                                            )
+                                        )
                             # Implement rate limiting
-                            time.sleep(0.2)
+                            await asyncio.sleep(0.2)
                         except Exception as e:
                             logger.error(f"Error processing post: {e}")
                             console.print(f"[red]Error processing post: {e}[/red]")
                         progress.update(post_task, advance=1)
 
-            if not no_highlights:
-                # Download highlights and their stories with spinners
-                with Progress(
-                    SpinnerColumn(), TextColumn("{task.description}"), console=console
-                ) as progress:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
+                if not no_highlights:
                     for highlight in highlights:
                         highlight_title = (
                             f"[bold magenta]{highlight.title}[/bold magenta]"
                         )
                         highlight_task = progress.add_task(
-                            f"Downloading highlight {highlight_title}"
+                            f"Downloading highlight {highlight_title}",
+                            total=len(highlight.get_items()),
                         )
 
                         for item in highlight.get_items():
@@ -276,27 +285,48 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
                                     logger.info(
                                         f"Downloading highlight video: {item.video_url}"
                                     )
-                                    download_media(item.video_url, media_dir)
+                                    tasks.append(
+                                        download_media(
+                                            item.video_url, media_dir, session
+                                        )
+                                    )
                                 else:
                                     logger.info(
                                         f"Downloading highlight image: {item.url}"
                                     )
-                                    download_media(item.url, media_dir)
+                                    tasks.append(
+                                        download_media(item.url, media_dir, session)
+                                    )
                                 # Implement rate limiting
-                                time.sleep(0.2)
+                                await asyncio.sleep(0.2)
                             except Exception as e:
                                 logger.error(f"Error processing highlight item: {e}")
                                 console.print(
                                     f"[red]Error processing highlight item: {e}[/red]"
                                 )
-                        progress.update(highlight_task, completed=1)
+                            progress.update(highlight_task, advance=1)
+
+                    await asyncio.gather(*tasks, return_exceptions=True)
 
         except Exception as e:
             logger.error(f"Error fetching profile {profile_name}: {e}")
             console.print(f"[red]Error fetching profile {profile_name}: {e}[/red]")
 
-    for profile_name in profile_names:
-        get_profile_media(profile_name)
+    async def main_async():
+        with Progress(
+            SpinnerColumn(),
+            BarColumn(),
+            "[progress.percentage]{task.percentage:>3.1f}%",
+            TextColumn("{task.description}"),
+            console=console,
+        ) as progress:
+            tasks = [
+                get_profile_media(profile_name, progress)
+                for profile_name in profile_names
+            ]
+            await asyncio.gather(*tasks)
+
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":
