@@ -1,7 +1,7 @@
-import instaloader
 import os
 import time
 import requests
+import instaloader
 import rich_click as click
 from loguru import logger
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
@@ -9,6 +9,8 @@ from rich.console import Console
 from rich.traceback import install
 from PIL import Image
 import cv2
+import tkinter as tk
+from tkinter import filedialog
 
 # Install rich traceback handler
 install()
@@ -21,7 +23,7 @@ logger.remove()
 
 
 def generate_log_filename(profile_name):
-    # create the filename from name of the profile we are downloading + current date - DD/MM/YYYY
+    # Create the filename from the name of the profile we are downloading + current date - DD/MM/YYYY
     return f"{profile_name}_{time.strftime('%d-%m-%Y')}.log"
 
 
@@ -33,13 +35,36 @@ def format_size(size):
         size /= 1024
 
 
+def select_input_directory():
+    """Open file dialog to select input directory."""
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        input_dir = filedialog.askdirectory(title="Select Input Directory")
+        return input_dir
+    except Exception as e:
+        logger.error(f"Tkinter file dialog failed: {e}")
+        return cli_select_input_directory()
+
+
+def cli_select_input_directory():
+    """Fallback method to select input directory via CLI."""
+    while True:
+        input_dir = input("Enter the input directory path: ").strip()
+        if os.path.isdir(input_dir):
+            return input_dir
+        else:
+            print(f"Directory does not exist: {input_dir}")
+
+
 @click.command()
 @click.argument("profile_name", required=False)
+@click.option("--media-root", required=False, help="Base directory for media output.")
 @click.option("--no-highlights", is_flag=True, help="Do not download highlights.")
 @click.option("--no-posts", is_flag=True, help="Do not download posts.")
 @click.option("--user", required=False, help="Instagram username.")
 @click.option("--password", required=False, help="Instagram password.")
-def main(profile_name, no_highlights, no_posts, user, password):
+def main(profile_name, media_root, no_highlights, no_posts, user, password):
     if not profile_name:
         console.print(
             "[bold magenta]Please enter the Instagram profile name[/bold magenta]"
@@ -49,7 +74,19 @@ def main(profile_name, no_highlights, no_posts, user, password):
             f"[green]Profile name set to:[/green] [bold]{profile_name}[/bold]"
         )
 
-    log_filename = generate_log_filename(profile_name)
+    if not media_root:
+        media_root = select_input_directory()
+
+    # Define directories based on the profile name
+    base_dir = os.path.join(media_root, f"{profile_name}_media")
+    log_dir = os.path.join(base_dir, "logs")
+    media_dir = base_dir
+
+    # Ensure the directories exist
+    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(media_dir, exist_ok=True)
+
+    log_filename = os.path.join(log_dir, generate_log_filename(profile_name))
 
     logger.add(
         log_filename,
@@ -79,8 +116,8 @@ def main(profile_name, no_highlights, no_posts, user, password):
 
     def download_media(url, output_dir):
         try:
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
+            # Ensure the output directory exists
+            os.makedirs(output_dir, exist_ok=True)
 
             # Extract filename from URL
             filename = os.path.join(output_dir, url.split("?")[0].split("/")[-1])
@@ -127,11 +164,6 @@ def main(profile_name, no_highlights, no_posts, user, password):
         try:
             # Load the profile
             profile = instaloader.Profile.from_username(L.context, profile_name)
-
-            # Create directory to save media
-            media_dir = f"{profile_name}_media"
-            if not os.path.exists(media_dir):
-                os.makedirs(media_dir)
 
             # Get total number of posts and story highlights
             total_posts = profile.mediacount

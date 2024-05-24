@@ -15,6 +15,7 @@ setup(
         "rich-click",
         "opencv-python",
         "pillow",
+        "tk",
         "loguru",
         "requests",
         "instaloader",
