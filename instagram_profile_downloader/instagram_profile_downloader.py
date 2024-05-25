@@ -78,6 +78,7 @@ def cli_select_input_directory():
 def main(profile_names, media_root, no_highlights, no_posts, user, password):
     config = load_config()
 
+    profile_names = profile_names or config.get("profile_names")
     if not profile_names:
         console.print(
             "[bold magenta]Please enter the Instagram profile names separated by commas[/bold magenta]"
