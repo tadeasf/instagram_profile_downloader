@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="instagram_profile_downloader",
-    version="1.1.2",
+    version="1.1.3",
     author="Tadeas Fort",
     author_email="taddy.fort@gmail.com",
     description="A tool to download all images and videos and story highlights from an Instagram profile.",
