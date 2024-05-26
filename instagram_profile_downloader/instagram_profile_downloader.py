@@ -75,7 +75,10 @@ def cli_select_input_directory():
 @click.option("--no-posts", is_flag=True, help="Do not download posts.")
 @click.option("--user", required=False, help="Instagram username.")
 @click.option("--password", required=False, help="Instagram password.")
-def main(profile_names, media_root, no_highlights, no_posts, user, password):
+@click.option("--two-factor", is_flag=True, help="Use two-factor authentication.")
+def main(
+    profile_names, media_root, no_highlights, no_posts, user, password, two_factor
+):
     config = load_config()
 
     profile_names = profile_names or config.get("profile_names")
@@ -87,7 +90,6 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
 
     profile_names = [name.strip() for name in profile_names.split(",")]
 
-    # instead of this: console.print(f"[green]Profile names set to:[/green] [bold]{profile_names}[/bold]") i would like to get multiple lines of console output -> one line per profile name
     for profile_name in profile_names:
         console.print(
             f"[green]Profile name set to:[/green] [bold]{profile_name}[/bold]"
@@ -112,7 +114,32 @@ def main(profile_names, media_root, no_highlights, no_posts, user, password):
 
     # Create an instance of Instaloader
     L = instaloader.Instaloader()
-    L.login(user, password)
+
+    # Initial Login Attempt
+    try:
+        L.login(user, password)
+    except instaloader.TwoFactorAuthRequiredException:
+        if two_factor:
+            while True:
+                console.print(
+                    "[bold yellow]2FA is required. Please enter the 2FA code:[/bold yellow]",
+                    end=" ",
+                )
+                two_factor_code = click.prompt("", type=str)
+                try:
+                    L.two_factor_login(two_factor_code)
+                    console.print("[green]2FA login successful![/green]")
+                    break
+                except instaloader.exceptions.BadCredentialsException as e:
+                    console.print(f"[red]2FA error: {e}. Please try again.[/red]")
+        else:
+            console.print(
+                "[red]2FA is required but --two-factor flag not provided.[/red]"
+            )
+            return
+    except instaloader.exceptions.BadCredentialsException as e:
+        console.print(f"[red]Login error: {e}[/red]")
+        return
 
     def download_media(url, output_dir):
         try:
