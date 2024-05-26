@@ -279,7 +279,7 @@ def main(
                                         )
                                         download_media(sidecar.display_url, media_dir)
                             # Implement rate limiting
-                            time.sleep(1)
+                            time.sleep(1.5)
                         except Exception as e:
                             logger.error(f"Error processing post: {e}")
                             console.print(f"[red]Error processing post: {e}[/red]")
@@ -311,7 +311,7 @@ def main(
                                     )
                                     download_media(item.url, media_dir)
                                 # Implement rate limiting
-                                time.sleep(1)
+                                time.sleep(1.5)
                             except Exception as e:
                                 logger.error(f"Error processing highlight item: {e}")
                                 console.print(
