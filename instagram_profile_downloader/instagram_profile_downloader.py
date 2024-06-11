@@ -72,12 +72,26 @@ def cli_select_input_directory():
 @click.argument("profile_names", required=False)
 @click.option("--media-root", required=False, help="Base directory for media output.")
 @click.option("--no-highlights", is_flag=True, help="Do not download highlights.")
+@click.option("--only-highlights", is_flag=True, help="Only download highlights.")
+@click.option(
+    "--interactive-highlights",
+    is_flag=True,
+    help="Interactively select which highlights to download.",
+)
 @click.option("--no-posts", is_flag=True, help="Do not download posts.")
 @click.option("--user", required=False, help="Instagram username.")
 @click.option("--password", required=False, help="Instagram password.")
 @click.option("--two-factor", is_flag=True, help="Use two-factor authentication.")
 def main(
-    profile_names, media_root, no_highlights, no_posts, user, password, two_factor
+    profile_names,
+    media_root,
+    no_highlights,
+    only_highlights,
+    interactive_highlights,
+    no_posts,
+    user,
+    password,
+    two_factor,
 ):
     config = load_config()
 
@@ -220,7 +234,7 @@ def main(
             total_posts = profile.mediacount
 
             # Fetch story highlights separately
-            if not no_highlights:
+            if not no_highlights or only_highlights or interactive_highlights:
                 L.context.log("Fetching highlights...")
                 try:
                     highlights = list(L.get_highlights(profile))
@@ -245,7 +259,7 @@ def main(
             console.print(f"[blue]Total posts: {total_posts}[/blue]")
             console.print(f"[blue]Total highlights: {total_highlights}[/blue]")
 
-            if not no_posts:
+            if not no_posts and not only_highlights:
                 # Download posts with progress bar
                 with Progress(
                     SpinnerColumn(),
@@ -285,12 +299,21 @@ def main(
                             console.print(f"[red]Error processing post: {e}[/red]")
                         progress.update(post_task, advance=1)
 
-            if not no_highlights:
+            if not no_highlights or only_highlights or interactive_highlights:
                 # Download highlights and their stories with spinners
                 with Progress(
                     SpinnerColumn(), TextColumn("{task.description}"), console=console
                 ) as progress:
                     for highlight in highlights:
+                        if interactive_highlights:
+                            console.print(
+                                f"[bold magenta]Do you want to download the highlight {highlight.title}? (y/n)[/bold magenta]",
+                                end=" ",
+                            )
+                            choice = click.prompt("", type=str).lower()
+                            if choice not in ["y", "yes"]:
+                                continue
+
                         highlight_title = (
                             f"[bold magenta]{highlight.title}[/bold magenta]"
                         )
